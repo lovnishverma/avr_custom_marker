@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Smart Switch</title>
+    <link rel="icon" type="image/x-icon" href="https://cdn.glitch.global/b9ef9744-cb5d-4668-ab95-61316b0c0b84/pattern-nielit.png?v=1740069073946" />
+    
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+    <style>
+        /* Status Overlay Styling */
+        #status-overlay {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            z-index: 10;
+            text-align: center;
+            pointer-events: none;
+        }
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            background-color: #bbb;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+
+<body style="margin: 0; overflow: hidden;">
+
+    <div id="status-overlay">
+        <span class="status-dot" id="dot"></span>
+        <span id="status-text">Scanning for Marker...</span>
+    </div>
+
+    <a-scene 
+        embedded 
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+        renderer="logarithmicDepthBuffer: true; colorManagement: true;"
+        vr-mode-ui="enabled: false">
+
+        <a-marker type="pattern" url="pattern-nielit.patt" id="nielit-marker" smooth="true">
+            
+            <a-box id="switch-box" 
+                position="0 0.5 0" 
+                material="color: #555; opacity: 0.9; metalness: 0.5; roughness: 0.1" 
+                animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear">
+            </a-box>
+
+            <a-text id="box-label" 
+                value="CONNECTING..." 
+                position="0 1.2 0" 
+                align="center" 
+                scale="1.5 1.5 1.5"
+                color="white">
+            </a-text>
+
+        </a-marker>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const marker = document.querySelector("#nielit-marker");
+            const box = document.querySelector("#switch-box");
+            const label = document.querySelector("#box-label");
+            const statusText = document.getElementById("status-text");
+            const statusDot = document.getElementById("dot");
+
+            let debounceTimer = null;
+            let isActionPending = false;
+
+            // Update UI Helper
+            function updateUI(color, message, dotColor) {
+                box.setAttribute("material", "color", color);
+                label.setAttribute("value", message);
+                statusText.innerText = message;
+                statusDot.style.backgroundColor = dotColor;
+            }
+
+            // Function to call the Glitch API
+            async function triggerSwitch(state) {
+                console.log(`Attempting to switch: ${state}`);
+                
+                // Visual feedback during request
+                label.setAttribute("value", "SYNCING...");
+                
+                try {
+                    const response = await fetch(`https://roomcontrol.glitch.me/toggle-app?state=${state}`);
+                    if (!response.ok) throw new Error("Network response was not ok");
+                    
+                    const data = await response.text();
+                    console.log("Server Response:", data);
+
+                    if (state === "on") {
+                        updateUI("#00FF00", "DEVICE ON", "#00FF00"); // Green
+                    } else {
+                        updateUI("#FF0000", "DEVICE OFF", "#FF0000"); // Red
+                    }
+
+                } catch (error) {
+                    console.error("Fetch error:", error);
+                    updateUI("#888888", "CONNECTION FAILED", "orange"); // Gray/Orange
+                }
+            }
+
+            // MARKER FOUND
+            marker.addEventListener("markerFound", () => {
+                console.log("Marker Found");
+                
+                // If we were about to turn it off (debounce), cancel that!
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = null;
+                }
+
+                // Only trigger 'on' if we aren't already pending an action
+                triggerSwitch("on");
+            });
+
+            // MARKER LOST
+            marker.addEventListener("markerLost", () => {
+                console.log("Marker Lost - Starting Debounce Timer");
+                
+                // Don't turn off immediately! Wait 2 seconds.
+                // If the user points the camera back within 2s, this timer is cancelled.
+                debounceTimer = setTimeout(() => {
+                    triggerSwitch("off");
+                    debounceTimer = null;
+                }, 2000); // 2000ms = 2 seconds delay
+            });
+        });
+    </script>
+</body>
+</html>
